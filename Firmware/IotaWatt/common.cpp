@@ -119,14 +119,15 @@
  *   11/01/21 02_07_03 Release integrations
  *   11/14/21 02_07_04 Fix several issues with influxDB2. Modify integrations Docs.
  *   12/16/21 02_07_05 Fix several problems with Scripts
+ *   10/04/22 02_08_00 Core 3.0.2, Robust no Voltage, rework sample cycle and power, misc fixes
+ *   12/18/22 02_08_01 Regress to core 2.4.0. Fix PVoutput rate-limit resume.
+ *   01/25/23 02_08_02 Fix mDNS when AP changes
  * 
  *****************************************************************************************************/
 
       // Define instances of major classes to be used
 
 WiFiClient WifiClient;
-DNSServer DNS_server;
-MDNSResponder MDNS;    
 IotaLog Current_log(256,5,365,32);              // current data log  (1 year) 
 IotaLog History_log(256,60,3652,48);            // history data log  (10 years)
 IotaLog *Export_log = nullptr;                  // Optional export log    

@@ -3,12 +3,12 @@
 #include "detail/mimetable.h"
 #include "auth.h"
 
-#ifndef CORE_3_0  
-static const char AUTHORIZATION_HEADER[] PROGMEM = "Authorization";
-static const char qop_auth[] PROGMEM = "qop=auth";
-static const char WWW_Authenticate[] PROGMEM = "WWW-Authenticate";
+// #ifndef CORE_3_0  
+static const char AUTH_HEADER[] PROGMEM = "Authorization";
+// static const char qop_auth[] PROGMEM = "qop=auth";
+// static const char WWW_Authenticate[] PROGMEM = "WWW-Authenticate";
 static const char qop_authquote[] PROGMEM = "qop=\"auth\"";
-#endif
+// #endif
 static bool       authDebug = false;
 
 bool auth(authLevel level){
@@ -31,14 +31,14 @@ bool auth(authLevel level){
 
         // If no authorization header, return false.
 
-  if( ! server.hasHeader(FPSTR(AUTHORIZATION_HEADER))){
+  if( ! server.hasHeader(FPSTR(AUTH_HEADER))){
     if(authDebug) Serial.printf_P(PSTR("Auth: no authorization Header."));
     return false;
   }
 
         // Authorization is required and there is an authorization header.
 
-  String authReq = server.header(FPSTR(AUTHORIZATION_HEADER));
+  String authReq = server.header(FPSTR(AUTH_HEADER));
   //authReq.toLowerCase();
   if(authDebug) Serial.printf_P(PSTR("Auth: header %s\n"),authReq.c_str());
 
@@ -147,7 +147,7 @@ void requestAuth() {
   String _deviceString = deviceName;
   //_deviceString.toLowerCase();
   snprintf_P(authHeader, 100, PSTR("Digest realm=\"%s\",qop=\"auth\",nonce=\"%s\""), _deviceString.c_str(), bin2hex(auth->nonce,16).c_str());
-  server.sendHeader(String(FPSTR(WWW_Authenticate)), authHeader);
+  server.sendHeader(String(PSTR("WWW-Authenticate")), authHeader);
   server.send(401, F("text/html"), F("IoTaWatt-Login"));
   if(authDebug) Serial.printf_P(PSTR("Auth: requestAuth %s\n"),authHeader);
 }

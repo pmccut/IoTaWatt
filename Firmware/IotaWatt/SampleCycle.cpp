@@ -5,32 +5,33 @@
   *  sampleCycle(Vchan, Ichan)
   *  
   *  This code accounts for up to 66% (60Hz) of the execution of IotaWatt.
-  *  It collects voltage and current sample pairs and produces some preliminary
-  *  metrics in the process.
+  *  Voltage and current sample pairs are collected and some preliminary
+  *  metrics are produced.
   *     
   *  The approach is to start sampling voltage/current pairs in a tuned balanced loop
-  *  so as to maximize sample rate and minimize sampling phase-shift.
-  *  When voltage crosses zero, we start recording the pairs.
-  *  When we cross zero two more times, we stop, compute preliminary results and return.
+  *  that maximizes sample rate and minimizes sampling phase-shift.
+  *  When voltage crosses zero, recording of the sample pairs is started.
+  *  After two more zero crosses, a complete cycle is recorded and sampling stops.
+  *  Preliminary results are developed before returning.
   * 
   *  The loop is controlled by the voltage signal which should be a good sine-wave with
-  *  reasonable amplitude.  Multiple crosses within several samples are ignored.
-  * 
-  *  Voltage and Current signals are synchronized by averaging successive ADC samples,
-  *  effectively producing a new signal with linear interpolation.  This technique relies
+  *  reasonable amplitude.  The crossguard counter insures that crossings are unambiguous.
+  *  Voltage and Current signals are synchronized by averaging successive voltage samples,
+  *  effectively producing a new signal via linear interpolation.  This technique relies
   *  on balancing of the time required to take the voltage and current ADC readings.
   * 
-  *  There are timeout safeguards in place to detect loss of signal.
+  *  There are various timeout safeguards in place to detect absence or loss of signal, as well
+  *  as incomplete sample sets that can be caused by processor interrupts. 
   *  
   *  Note:  If ever there was a time for low-level hardware manipulation, this is it.
-  *  the tighter and faster the samples can be taken, the more accurate the results can be.
+  *  The tighter and faster the samples can be taken, the more accurate the results will be.
   *  The ESP8266 has pretty good SPI functions, but even using them optimally, it's only possible
   *  to achieve about 350 sample pairs per cycle.
   *  
   *  By manipulating the SPI chip select pin through hardware registers and
   *  running the SPI for only the required bits, again using the hardware 
-  *  registers, it's possinble to get about 640 sample pairs per cycle (60Hz) running
-  *  the SPI at 2MHz, which is the spec for the MCP3208.
+  *  registers, it's possible to get about 640 sample pairs per cycle (60Hz) running
+  *  the SPI at 2MHz, which is the maximum data rate for the MCP3208.
   *  
   *  I've tried to segregate the bit-banging and document it well.
   *  For anyone interested in the low level registers, you can find 
@@ -59,7 +60,7 @@ int sampleCycle(IotaInputChannel *Vchannel, IotaInputChannel *Ichannel, int cycl
   int16_t offsetV = Vchannel->_offset;        // Bias offset
   int16_t offsetI = Ichannel->_offset;
   
-  int16_t rawV;                               // Raw ADC readings
+  int16_t rawV = 0;                               // Raw ADC readings
   int16_t lastV = 0;
   int16_t avgV;
   int16_t rawI = 0;
@@ -69,7 +70,7 @@ int sampleCycle(IotaInputChannel *Vchannel, IotaInputChannel *Ichannel, int cycl
     
   int16_t crossLimit = cycles * 2 + 1;        // number of crossings in total
   int16_t crossCount = 0;                     // number of crossings encountered
-  int16_t crossGuard = 3;                     // Guard against faux crossings (must be >= 2 initially)  
+  int16_t crossGuard = 4;                     // Guard against faux crossings (must be >= 2 initially), more to detect no voltage
 
   uint32_t startMs = millis();                // Start of current half cycle
   uint32_t timeoutMs = 12;                    // Maximum time allowed per half cycle
@@ -82,6 +83,7 @@ int sampleCycle(IotaInputChannel *Vchannel, IotaInputChannel *Ichannel, int cycl
   uint32_t ADC_IselectMask = 1 << ADC_IselectPin;             // Mask for hardware chip select (pins 0-15)
   uint32_t ADC_VselectMask = 1 << ADC_VselectPin;
 
+  bool Vsensed = false;                       // Voltage greater than 5 counts sensed.
   bool Vreverse = inputChannel[Vchan]->_reverse;
   bool Ireverse = inputChannel[Ichan]->_reverse;
   
@@ -123,6 +125,15 @@ int sampleCycle(IotaInputChannel *Vchannel, IotaInputChannel *Ichannel, int cycl
               return 2;
             }
           }
+
+              // Check for a significant voltage reading before first cross.
+              // Will abort sample after initial crossGuard if not found.
+
+          else {
+            if(rawV < -10 || rawV > 10){
+              Vsensed = true;
+            }
+          }
           crossGuard--;    
           
               // Now wait for SPI to complete
@@ -150,15 +161,23 @@ int sampleCycle(IotaInputChannel *Vchannel, IotaInputChannel *Ichannel, int cycl
               
               // Check for timeout.  The clock gets reset at each crossing, so the
               // timeout value is a little more than a half cycle - 10ms @ 60Hz, 12ms @ 50Hz.
-              // The most common cause of timeout here is unplugging the AC reference VT.  Since the
-              // device is typically sampling 60% of the time, there is a high probability this
-              // will happen if the adapter is unplugged.
-              // So handling needs to be robust.
-        
+                      
           if((uint32_t)(millis()-startMs)>timeoutMs){                   // Something is wrong
             trace(T_SAMP,2,Ichan);                                      // Leave a meaningful trace
             trace(T_SAMP,2,Vchan);
-            GPOS = ADC_VselectMask;                                     // ADC select pin high 
+            GPOS = ADC_VselectMask;                                     // ADC select pin high
+            lastCrossUs = micros();                       
+            return 2;                                                   // Return a failure
+          }
+
+              // Check that a significant voltage reading was found before first zero cross.
+              // If not, abort cycle sample.
+
+          else if(!crossGuard && !Vsensed){
+            trace(T_SAMP,3,Ichan);                                      // Leave a meaningful trace
+            trace(T_SAMP,3,Vchan);
+            GPOS = ADC_VselectMask;                                     // ADC select pin high
+            lastCrossUs = micros();                       
             return 2;                                                   // Return a failure
           }
           if(rawI >= -1 && rawI <= 1) rawI = 0;
